@@ -1,0 +1,1670 @@
+---
+title: "Female Representation in Management of Australian Organisations" 
+subtitle: "A Multi-Class Classification Study Using the 2024 WGEA Dataset"
+author: "W13_G01 (SID: 510546500, 4803773225, 500180477, 530729668, 540321609)"
+output:
+  bookdown::html_document2:
+    code_folding: hide
+    self_contained: true
+  bookdown::pdf_document2:
+    latex_engine: xelatex
+fontsize: 10pt
+geometry: margin=1in
+editor_options:
+  markdown:
+    wrap: 72
+---
+
+```{r}
+knitr::opts_chunk$set(fig.align = "center")
+```
+
+![](IntroPicture.png){width=70% style="display:block; margin-left:auto; margin-right:auto;"}
+
+
+## Problem Definition
+
+Achieving gender equity in the workplace is a critical national goal for
+Australia, yet employers often face unique structural and cultural
+barriers that hinder women’s progression into leadership roles. This
+project therefore investigates the following research question:
+
+**“Can workforce composition, promotion and resignation patterns, and
+organisational gender-equity policies be used to predict the level of
+female representation in management positions within Australian
+organisations?”**
+
+This study is presented as a **classification problem**, where each
+organisation is assigned to one of **five quintile-based categories**
+based on the percentage of managers who are female: *Very Low, Low,
+Moderate, High, and Very High* female representation in management.
+
+The practical importance of this work lies in the established link
+between gender diversity in leadership and improved organisational
+performance. Research by the Workplace Gender Equality Agency and the
+Bankwest Curtin Economics Centre found that a **10-percentage-point
+increase in female top-tier managers corresponded to a 6.6% uplift in
+the market value** of ASX-listed companies
+[[1]](https://www.wgea.gov.au/sites/default/files/documents/BCEC%20WGEA%20Media%20Release%20-%20More%20women%20at%20the%20top%20proves%20better%20for%20business.pdf).
+By identifying the organisational factors that predict high female
+management representation, this analysis can inform evidence-based
+interventions that support women’s advancement into management roles,
+delivering benefits for both workplace equity and business outcomes.
+
+## Data Description
+
+### Data Overview
+
+The data for this investigation are drawn from the **Workplace Gender
+Equality Agency (WGEA) Public Dataset 2024**
+[[2]](https://data.gov.au/data/dataset/wgea-dataset), which comprises
+mandated survey responses from 7415 Australian employers with 100 or
+more employees. The dataset is provided across seven files, including:
+
+**Quantitative Workforce Data (2 files):** These files provide
+disaggregated counts of employees and workforce movements for each
+employer in long format. Each row represents a specific subgroup within
+a company, defined by attributes such as role, employment type, and
+gender (e.g., CEO – Full-time – Female).
+
+-   **Workforce Composition (193,916 rows; 17 columns):** Contains
+    employee counts by occupation, management category, employment type,
+    and gender, showing a breakdown of workforce structure across
+    employers.
+
+-   **Workforce Management Statistics (186,831 rows; 18 columns):**
+    Reports workforce movements (e.g., promotions, resignations) by
+    gender, employment status, and managerial category.
+
+**Questionnaire Data (5 files):** These files capture organisational
+policies and practices in long format, where each row corresponds to a
+single employer’s response to one question. For questions allowing
+multiple selections, each chosen option is recorded as a separate row
+(e.g., an employer selecting three flexible-work options generates three
+rows). Collectively, the five files contain 83 unique questions and 554
+unique responses, covering: Harm Prevention (508,476 rows), Action on
+Gender Equality (129,313 rows), Flexible Work (222,858 rows), Workplace
+Overview (178,111 rows), Employee Support (289,830 rows).
+
+### Challenges
+
+The chosen dataset presents several challenges:
+
+-   **High Dimensionality:** The feature space is large due to binary
+    encoding of questionnaire data. Across 83 unique questions and 554
+    response options, the resulting dataset combines quantitative
+    workforce metrics with hundreds of binary policy indicators,
+    creating a high dimensional input space.
+
+-   **Integration Complexity:** Source files are provided in long format
+    and at differing levels of granularity, requiring feature
+    engineering and aggregation to produce a wide-format dataset
+    suitable for modelling.
+
+-   **Data Quality and Missingness:** Missing values are common due to
+    inconsistent reporting and the non-applicability of certain
+    questions across employers, necessitating imputation.
+
+## Data Preparation and Feature Engineering
+
+The raw WGEA data were processed to produce a dataset suitable for
+modelling. Each employer was represented by a single row containing
+quantitative metrics and binary indicators derived from the source
+files.
+
+**1. Data Integration** The seven datasets were merged on the shared
+employer_abn key, converting the original long format structure into
+aggregated employer-level feature sets.
+
+**2. Feature Engineering** New features were engineered to create a
+selected set of predictors for the classification task:
+
+-   **Workforce Composition Features:** both the overall and the
+    gender-specific proportions of management, executive, full-time, and
+    part-time roles within each organisation (e.g. `percent_full_time`
+    and `full_time_female_percent`).
+
+-   **Workforce Movement Features:** gender-specific promotion and
+    resignation rates to highlight potential disparities in workforce
+    movement.
+
+-   **Organisational Policy Features:** Binary indicators reflecting the
+    presence of gender-equity, flexible-work, and harm-prevention
+    policies.
+
+**3. Target Variable Creation** The categorical target
+*management_representation_level* was derived from the engineered
+variable *management_female_percent* (the percentage of managers who are
+women) by dividing organisations into five balanced quintiles: *Very
+Low, Low, Moderate, High, and Very High*. Organisations with no
+management employees were excluded, as representation could not be
+determined.
+
+This approach:
+
+-   Ensures balanced class sizes, with each category containing \~20 %
+    of organisations; and
+
+-   Captures the full spectrum of management gender representation while
+    maintaining interpretability.
+
+**4. Handling of Missing Values** Missing values were handled using the
+following multi-step process:
+
+-   **Removal of Unlinkable Records:** Any rows missing an
+    `employer_abn` were discarded. These records often belonged to
+    subsidiaries of larger corporate groups that had workforce data but
+    lacked their own corresponding questionnaire data.
+
+-   **Imputation for Numeric and Binary Features:** For all remaining
+    numeric and binary policy features, missing values (`NA`) were
+    imputed with zero. This assumes that an absence of reported data
+    signifies a true zero value, since organisations are not only
+    incentivised to report their positive policies, but also mandated to
+    report its statistics.
+
+-   **Imputation for Categorical Features:** For categorical features
+    where a zero was not a logical substitute (e.g.,
+    `top_leader_gender`), missing values were replaced with a new
+    category such as '"None Reported"'. This allows us to assess if the
+    absence of a response is a predictive pattern.
+
+After the feature engineering and filtering out organisations with no
+management positions, the final dataset comprised **6,673 employer-level
+records** and **32 features** suitable for identifying patterns of
+gender representation in management.
+
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+### Import libraries
+library(tidyverse)
+library(here)
+library(dplyr)
+library(naniar)
+library(FactoMineR)
+library(factoextra)
+library(visdat)
+library(patchwork)
+library(ggplot2)
+library(Rtsne)
+library(gridExtra)
+library(psych)
+library(reshape2)
+library(dplyr)
+library(tidyr)
+library(knitr)
+library(kableExtra)
+library(ggridges)
+library(corrplot)
+library(ggcorrplot)
+
+
+### Load the data
+df_comp <- read_csv("wgea_workforce_composition_2024.csv", show_col_types = FALSE) %>%
+  drop_na(employer_abn)
+
+df_mgmt <- read_csv("wgea_workforce_management_statistics_2024.csv", show_col_types = FALSE) %>%
+  drop_na(employer_abn)
+
+df_actions <- read_csv("wgea_questionnaire_action_on_gender_equality_2024.csv", show_col_types = FALSE) %>%
+  drop_na(employer_abn)
+
+df_flex <- read_csv("wgea_questionnaire_flexible_work_2024.csv", show_col_types = FALSE) %>%
+  drop_na(employer_abn)
+
+df_overview <- read_csv("wgea_questionnaire_workplace_overview_2024.csv", show_col_types = FALSE) %>%
+  drop_na(employer_abn)
+
+df_harm <- read_csv("wgea_questionnaire_harm_prevention_2024.csv", show_col_types = FALSE) %>%
+  drop_na(employer_abn)
+
+df_support <- read_csv("wgea_questionnaire_employee_support_2024.csv", show_col_types = FALSE) %>%
+  drop_na(employer_abn)
+
+
+### Feature engineering: workforce composition data
+create_composition_features <- function(df_comp) {
+  # --- Helper columns for aggregation ---
+  df_comp <- df_comp %>%
+    mutate(
+      is_manager   = as.integer(manager_category == 'Manager'),
+      is_executive = as.integer(occupation %in% c(
+        'CEOs', 'Heads of Business', 'Other Executives and General Managers',
+        'Key Management Personnel', 'Senior managers')),
+      is_full_time = as.integer(employment_status == 'Full-time'),
+      is_part_time = as.integer(employment_status == 'Part-time'),
+      is_casual    = as.integer(employment_status == 'Casual'),
+      is_female    = as.integer(gender == 'Women')
+    )
+
+  # --- Aggregation by employer ABN ---
+  features <- df_comp %>%
+    group_by(employer_abn) %>%
+    summarise(
+      total_employees    = sum(n_employees),  # keep NA if all missing
+      percent_managers   = sum(n_employees * is_manager)   / total_employees,
+      percent_full_time  = sum(n_employees * is_full_time) / total_employees,
+      percent_part_time  = sum(n_employees * is_part_time) / total_employees,
+      percent_casual     = sum(n_employees * is_casual)    / total_employees,
+      percent_female     = sum(n_employees * is_female)    / total_employees,
+      .groups = 'drop'
+    )
+
+  # --- Top Leader Gender ---
+  top_leader_df <- df_comp %>%
+  filter(occupation == "CEOs") %>%
+  group_by(employer_abn) %>%
+  summarise(
+    top_leader_gender = case_when(
+      n_distinct(gender) == 0 ~ "Non_specified",
+      n_distinct(gender) == 1 ~ first(gender),
+      n_distinct(gender) > 1  ~ "Both/Mix"
+    ),
+    .groups = "drop"
+  )
+
+  features <- features %>%
+  left_join(top_leader_df, by = "employer_abn") %>%
+  mutate(
+    top_leader_gender = ifelse(
+      is.na(top_leader_gender), "Non_specified", top_leader_gender
+    ),
+    top_leader_gender = factor(
+      top_leader_gender,
+      levels = c("Men", "Women", "Both/Mix", "Non_specified")
+    )
+  )
+  # --- Gender Composition by Role/Status ---
+  calculate_female_percent <- function(df, filter_expr) {
+    df %>%
+      filter({{filter_expr}}) %>%
+      group_by(employer_abn, gender) %>%
+      summarise(n = sum(n_employees), .groups = 'drop') %>%
+      pivot_wider(names_from = gender, values_from = n) %>%   # don't fill NAs
+      mutate(female_percent = ifelse((Women + Men) > 0, Women / (Women + Men), NA_real_)) %>%
+      select(employer_abn, female_percent)
+  }
+
+  manager_gender     <- calculate_female_percent(df_comp, is_manager == 1)
+  executive_gender   <- calculate_female_percent(df_comp, is_executive == 1)
+  non_manager_gender <- calculate_female_percent(df_comp, is_manager == 0)
+  full_time_gender   <- calculate_female_percent(df_comp, is_full_time == 1)
+  part_time_gender   <- calculate_female_percent(df_comp, is_part_time == 1)
+  casual_gender      <- calculate_female_percent(df_comp, is_casual == 1)
+
+  features <- features %>%
+    left_join(manager_gender   %>% rename(management_female_percent      = female_percent), by = "employer_abn") %>%
+    left_join(executive_gender %>% rename(executive_roles_female_percent = female_percent), by = "employer_abn") %>%
+    left_join(non_manager_gender %>% rename(non_management_female_percent = female_percent), by = "employer_abn") %>%
+    left_join(full_time_gender   %>% rename(full_time_female_percent      = female_percent), by = "employer_abn") %>%
+    left_join(part_time_gender   %>% rename(part_time_female_percent      = female_percent), by = "employer_abn") %>%
+    left_join(casual_gender      %>% rename(casual_female_percent         = female_percent), by = "employer_abn")
+
+  return(features)
+}
+
+
+### Feature engineering: questionnaire data
+
+# Engineers binary features from the questionnaire data
+create_policy_features <- function(df_actions, df_flex, df_overview, df_harm, df_support, abn_list) {
+  # --- Setup and create helper functions ---
+  df_q <- bind_rows(df_actions, df_flex, df_overview, df_harm, df_support) %>%
+    distinct()
+
+  policy_features <- tibble(employer_abn = unique(abn_list))
+
+  add_binary_feature <- function(df, feature_name, question_text, response_value) {
+    abns_with_policy <- df_q %>%
+      filter(str_starts(question_text, !!question_text), response == !!response_value) %>%
+      pull(employer_abn) %>%
+      unique()
+
+    df %>% mutate(!!feature_name := as.integer(employer_abn %in% abns_with_policy))
+  }
+
+  # --- Core Strategy & Pay Equity ---
+  policy_features <- policy_features %>%
+    add_binary_feature('has_gender_equality_strategy', "1.1", "Yes") %>%
+    add_binary_feature('has_target_for_gender_equity', "1.2", "Yes") %>%
+    add_binary_feature('has_policy_for_gender_equality', "1.4e", "Yes") %>%
+    add_binary_feature('has_target_for_women_in_governing_body', "1.4g", "Yes") %>%
+    add_binary_feature('has_pay_equity_strategy', "2.1", "Yes") %>%
+    add_binary_feature('did_pay_gap_analysis', "2.2", "Yes") %>%
+    add_binary_feature('actioned_on_pay_gap_analysis', "2.2c", "Yes") %>%
+    add_binary_feature('consulted_employee_on_equity', "2.4", "Yes")
+
+  # --- Flexible Work ---
+  policy_features <- policy_features %>%
+    add_binary_feature('has_flexible_work_policy', "3.1", "Yes") 
+
+  # --- Parental Leave ---
+  policy_features <- policy_features %>%
+    add_binary_feature('offers_paid_primary_carer_leave', "4.1.2", "Yes") %>%
+    add_binary_feature('offers_paid_secondary_carer_leave', "4.1.3", "Yes") %>%
+    add_binary_feature('opt_out_approach_for_parental_leave', "4.2", "Yes") %>%
+    add_binary_feature('has_strategy_for_employee_with_family', "4.4", "Yes") %>%
+    add_binary_feature('has_target_for_men_parental_leave', "1.2", "Increase the number of men taking parental leave")
+
+  # --- Employee Support & Training ---
+  abns_manager_training <- df_q %>%
+    filter(str_detect(question_text, "Did you take any actions as a result of your gender remuneration gap analysis?"),
+           response == "Trained people-managers in addressing gender bias (including unconscious bias)") %>%
+    pull(employer_abn) %>%
+    unique()
+  policy_features <- policy_features %>%
+    mutate(gender_equality_training_for_managers = as.integer(employer_abn %in% abns_manager_training))
+
+  return(policy_features)
+}
+
+### Feature engineering: workforce movement
+create_movement_features <- function(df_movement, df_composition) {
+  if (is.null(df_movement) || is.null(df_composition)) return(NULL)
+
+  # 1. Get total employees by gender and rename for clarity
+  comp_gender_totals <- df_composition %>%
+    group_by(employer_abn, gender) %>%
+    summarise(total = sum(n_employees), .groups = 'drop') %>%
+    pivot_wider(names_from = gender, values_from = total) %>%
+    rename(Men_total = Men, Women_total = Women)
+
+  # 2. Get all movement counts by type
+  movements_by_type <- df_movement %>%
+    group_by(employer_abn, movement_type, gender) %>%
+    summarise(n = sum(n_employees), .groups = 'drop') %>%
+    pivot_wider(names_from = gender, values_from = n)
+
+  # 3. Filter for promotions and rename
+  promotions <- movements_by_type %>%
+    filter(movement_type == 'Promotions') %>%
+    select(employer_abn, Men, Women) %>%
+    rename(Men_promo = Men, Women_promo = Women)
+
+  # 4. Filter for resignations and rename
+  resignations <- movements_by_type %>%
+    filter(movement_type == 'Resignations') %>%
+    select(employer_abn, Men, Women) %>%
+    rename(Men_resign = Men, Women_resign = Women)
+
+  # 5. Join and calculate rates (keep NA if totals or counts missing)
+rates <- comp_gender_totals %>%
+  left_join(promotions, by = "employer_abn") %>%
+  left_join(resignations, by = "employer_abn") %>%
+  mutate(
+    promotion_rate_female = ifelse(
+      !is.na(Women_total) & (Women_total + Women_promo) > 0,
+      Women_promo / (Women_total + Women_promo),
+      NA_real_
+    ),
+    promotion_rate_male = ifelse(
+      !is.na(Men_total) & (Men_total + Men_promo) > 0,
+      Men_promo / (Men_total + Men_promo),
+      NA_real_
+    ),
+    resignation_rate_female = ifelse(
+      !is.na(Women_total) & (Women_total + Women_resign) > 0,
+      Women_resign / (Women_total + Women_resign),
+      NA_real_
+    ),
+    resignation_rate_male = ifelse(
+      !is.na(Men_total) & (Men_total + Men_resign) > 0,
+      Men_resign / (Men_total + Men_resign),
+      NA_real_
+    )
+  )
+
+  # 6. Combine all movement features
+  final_movement_features <- rates %>%
+    select(
+      employer_abn,
+      promotion_rate_female, promotion_rate_male,
+      resignation_rate_female, resignation_rate_male
+    )
+
+  return(final_movement_features)
+}
+
+### Main Execution
+composition_features <- create_composition_features(df_comp)
+policy_features <- create_policy_features(df_actions, df_flex, df_overview, df_harm, df_support, composition_features$employer_abn)
+movement_features <- create_movement_features(df_mgmt, df_comp)
+
+# Join all features together
+composite_df <- composition_features %>%
+  left_join(policy_features, by = "employer_abn") %>%
+  left_join(movement_features, by = "employer_abn")
+
+# Add industry info
+industry_info <- df_comp %>%
+  select(employer_abn, anzsic_division) %>%
+  distinct()
+
+composite_df <- composite_df %>%
+  left_join(industry_info, by = "employer_abn")
+
+
+### Drop organizations with no management data
+# Remove organizations where management_female_percent is NA (no managers at all)
+composite_df <- composite_df %>%
+  filter(!is.na(management_female_percent))
+
+### Handle remaining missing values
+composite_df <- composite_df %>%
+  mutate(across(where(is.numeric), ~replace_na(., 0))) %>%
+  mutate(across(where(is.character), ~replace_na(., "None")))
+
+### Create target variable: management representation level buckets
+# Create balanced quintiles using ntile() to ensure exactly 20% in each group
+composite_df <- composite_df %>%
+  mutate(
+    quintile_rank = ntile(management_female_percent, 5),
+    management_representation_level = case_when(
+      quintile_rank == 1 ~ "V.Low",
+      quintile_rank == 2 ~ "Low", 
+      quintile_rank == 3 ~ "Mod",
+      quintile_rank == 4 ~ "High",
+      quintile_rank == 5 ~ "V.High"
+    )
+  ) %>%
+  select(-quintile_rank) %>% 
+  mutate(
+  management_representation_level = factor(
+    management_representation_level,
+    levels = c("V.Low", "Low", "Mod", "High", "V.High")
+  )
+) %>% select(-percent_casual, -percent_female)
+  
+```
+
+## Exploratory Analysis and Visualisation
+
+### Distribution of Female Representation in Management
+
+```{r fig-target, fig.cap="Target variable histogram", fig.width=7, fig.height=3, warning=FALSE, error=FALSE, message=FALSE}
+# Compute mean and median
+mean_val <- mean(composite_df$management_female_percent, na.rm = TRUE)
+median_val <- median(composite_df$management_female_percent, na.rm = TRUE)
+
+# Plot histogram with mean and median lines
+ggplot(composite_df, aes(x = management_female_percent, fill = management_representation_level)) +
+  geom_histogram(bins = 30, alpha = 0.7, color = "white", size = 0.3) +
+  geom_vline(aes(xintercept = mean_val), color = "blue", linetype = "dashed", size = 1) +
+  geom_vline(aes(xintercept = median_val), color = "red", linetype = "dotted", size = 1) +
+  annotate("text", x = mean_val + 0.03, y = 380, label = "Mean = 0.416", color = "blue", hjust = 0, size = 3.5) +
+  annotate("text", x = median_val + 0.03, y = 350, label = "Median = 0.400", color = "red", hjust = 0, size = 3.5) +
+  labs(
+    x = "Management Female Percentage",
+    y = "Count",
+    fill = "Female\nManagement\nRepresentation\nLevel",
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    legend.position = "right",
+    plot.title = element_text(hjust = 0.5, face = "bold")
+  ) +
+  guides(fill = guide_legend(ncol = 1))
+```
+
+The distribution of female management representation across
+organisations is distinctly right-skewed, with the majority of employers
+reporting relatively low proportions of women in management roles. The
+mean female management share is 41.6%, and the median is 40%, confirming
+that most organisations fall below gender parity. The histogram shows
+that a large concentration of firms lie between 20% and 40%
+representation, while only a minority of firms exceed equal
+representation. This indicates that women remain underrepresented in
+managerial positions, and gender balance at management levels is still
+relatively uncommon across Australian organisations. The skewed pattern
+highlights that progress toward equality is uneven and concentrated
+among a small subset of firms.
+
+### Boxplots of Non-Binary Numeric Features (with Outlier Counts)
+
+```{r fig-boxplot, fig.cap="Boxplots of non-binary numeric variables", fig.width=8, fig.height=3}
+# 1. Select numeric (non-binary) features
+df_num <- composite_df %>%
+  select(where(is.numeric), -employer_abn, -total_employees, -management_female_percent) %>%
+  select(where(~ n_distinct(.) > 2))
+
+# 2. Reshape to long format for plotting
+df_num_long <- df_num %>%
+  pivot_longer(everything(), names_to = "Feature", values_to = "Value")
+
+# 3. Compute outlier counts per feature
+outlier_counts <- df_num_long %>%
+  group_by(Feature) %>%
+  mutate(
+    Q1 = quantile(Value, 0.25, na.rm = TRUE),
+    Q3 = quantile(Value, 0.75, na.rm = TRUE),
+    IQR = Q3 - Q1,
+    lower = Q1 - 1.5 * IQR,
+    upper = Q3 + 1.5 * IQR,
+    is_outlier = Value < lower | Value > upper
+  ) %>%
+  summarise(outlier_count = sum(is_outlier, na.rm = TRUE))
+
+# 4. Global max across all features for fixed label position
+global_max <- max(df_num_long$Value, na.rm = TRUE)
+
+# 5. Plot boxplots with right-aligned labels
+ggplot(df_num_long, aes(x = Feature, y = Value)) +
+  geom_boxplot(fill = "lightblue", alpha = 0.7,
+               outlier.colour = "red", outlier.size = 1) +
+  coord_flip(clip = "off") +
+  geom_text(
+    data = outlier_counts,
+    aes(x = Feature,
+        y = global_max * 1.05,
+        label = paste0("Outliers: ", outlier_count)),
+    inherit.aes = FALSE, hjust = 0, size = 3.2
+  ) +
+  labs(
+    x = "Feature",
+    y = "Value"
+  ) +
+  theme_minimal() +
+  theme(plot.margin = margin(5, 110, 5, 5))
+```
+
+The boxplots illustrate the distribution of non-binary numeric features,
+with outlier counts shown for each variable. High outlier frequencies
+are observed in promotion and resignation rates, as well as the
+proportion of part-time and casual employees, whereas gender composition
+percentages are generally well-bounded with few or no outliers. This
+indicates that variability in workforce dynamics is concentrated in
+employment status and movement measures rather than overall gender
+proportions.
+
+Although several variables show a high number of outliers, further
+inspection of the raw WGEA data confirmed that these values are genuine
+and reflect real organisational differences rather than data errors. The
+dataset includes employers of varying sizes, industries, and workforce
+structures, meaning that naturally some organisations will have much
+higher or lower promotion, resignation, or part-time rates than others.
+These outliers therefore represent meaningful variation rather than
+noise, and were retained in the analysis to preserve the true diversity
+of organisational characteristics across the sample.
+
+
+### PCA of Non-binary Numeric Features
+
+```{r fig-pca, fig.cap = "PCA and Scree plot", fig.width=15, fig.height=7}
+library(ggrepel)
+library(ggplot2)
+library(dplyr)
+library(patchwork)
+
+# ============================================================
+# 1. PCA Calculation
+# ============================================================
+df_scaled <- scale(df_num)
+pca_res <- prcomp(df_scaled, center = FALSE, scale. = FALSE)
+
+pca_df <- data.frame(
+  PC1 = pca_res$x[, 1],
+  PC2 = pca_res$x[, 2],
+  Female_Mgmt_Level = composite_df$management_representation_level
+)
+
+# ============================================================
+# 2. Select Top Loadings (most influential features)
+# ============================================================
+loadings <- as.data.frame(pca_res$rotation[, 1:2])
+loadings$Variable <- rownames(loadings)
+
+top_loadings <- loadings %>%
+  mutate(Magnitude = sqrt(PC1^2 + PC2^2)) %>%
+  slice_max(order_by = Magnitude, n = 5)
+
+arrow_scale <- 4
+top_loadings <- top_loadings %>%
+  mutate(PC1_arrow = PC1 * arrow_scale,
+         PC2_arrow = PC2 * arrow_scale)
+
+# ============================================================
+# 3. PCA scatterplot with loadings (larger text)
+# ============================================================
+p1 <- ggplot(pca_df, aes(x = PC1, y = PC2, color = Female_Mgmt_Level)) +
+  geom_point(alpha = 0.6, size = 2.5) +
+  geom_segment(
+    data = top_loadings,
+    aes(x = 0, y = 0, xend = PC1_arrow, yend = PC2_arrow),
+    arrow = arrow(length = unit(0.25, "cm")),
+    color = "black",
+    linewidth = 0.8
+  ) +
+  geom_text_repel(
+    data = top_loadings,
+    aes(x = PC1_arrow * 1.1, y = PC2_arrow * 1.1, label = Variable),
+    size = 4.5,              # <- enlarged feature labels
+    color = "black",
+    box.padding = 0.5,
+    min.segment.length = 0,
+    max.overlaps = Inf
+  ) +
+  labs(
+    title = "PCA with Top Feature Loadings",
+    x = "Principal Component 1",
+    y = "Principal Component 2",
+  ) +
+  theme_minimal(base_size = 15) +       # <- larger base font for all text
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 16),
+    axis.title = element_text(size = 14),
+    axis.text = element_text(size = 12),
+    legend.position = "bottom",
+    legend.text = element_text(size = 12)
+  ) +
+  scale_color_discrete(
+    name = "Female Management Representation Level",
+    labels = function(x) str_wrap(x, width = 12)
+  )
+
+# ============================================================
+# 4. Scree Plot (optional beside)
+# ============================================================
+pca_var_exp <- (pca_res$sdev^2) / sum(pca_res$sdev^2)
+cum_var_exp <- cumsum(pca_var_exp) * 100
+
+p2 <- ggplot(data.frame(
+  Component = seq_along(cum_var_exp),
+  CumulativeVariance = cum_var_exp
+), aes(x = Component, y = CumulativeVariance)) +
+  geom_line(color = "steelblue", linewidth = 1.2) +
+  geom_point(color = "steelblue", size = 3) +
+  geom_hline(yintercept = 80, linetype = "dashed", color = "gray50") +
+  labs(
+    title = "Cumulative Scree Plot",
+    x = "Principal Component",
+    y = "Cumulative Var. Explained (%)"
+  ) +
+  theme_minimal(base_size = 15) +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 16),
+    axis.title = element_text(size = 14),
+    axis.text = element_text(size = 12)
+  )
+
+# ============================================================
+# 5. Combine
+# ============================================================
+(p1 | p2) + plot_layout(widths = c(2, 1))
+
+```
+
+The PCA offers a parametric, global, and linear perspective on workforce
+composition and management representation, with the first two principal
+components capturing approximately 53.7% of total variance (PC1 = 35.3%,
+PC2 = 18.4%). The scatterplot reveals considerable overlap among female
+management levels, though a slight separation trend along PC1 suggests
+that organisational differences in workforce structure partially align
+with management gender balance. The scree plot confirms that explanatory
+power diminishes sharply after the first three components, indicating
+that most meaningful variation is captured in the initial dimensions.
+Feature loadings demonstrate that organisational differences are
+primarily driven by promotion and resignation rates across both genders,
+reflecting common patterns in career mobility and turnover, while
+non-management female percentage contributes more distinctly along PC1
+axis.
+
+### t-SNE Projection of Non-binary Numeric Features
+
+```{r fig-tsne, fig.cap="tSNE Projection", fig.width=6.5, fig.height=4}
+set.seed(5003)
+df_unique <- unique(df_scaled)
+mgmt_unique <- composite_df$management_representation_level[!duplicated(df_scaled)]
+tsne_res <- Rtsne(df_unique, dims = 2, perplexity = 30, verbose = FALSE)
+
+tsne_df <- data.frame(
+  Dim1 = tsne_res$Y[,1],
+  Dim2 = tsne_res$Y[,2],
+  Management_Level = mgmt_unique
+)
+
+ggplot(tsne_df, aes(Dim1, Dim2, color = Management_Level)) +
+  geom_point(alpha = 0.6, size = 1.2) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    legend.position = "right",
+    legend.box = "right",
+    legend.text = element_text(size = 6)
+  ) +
+  guides(color = guide_legend(nrow = 5, byrow = TRUE)) +
+  scale_color_discrete(
+    name = "Female\nManagement\nRepresentation\nLevel",
+    labels = function(x) str_wrap(x, width = 12)
+  )
+```
+
+The t-SNE projection provides a non-parametric, local, and non-linear
+view of the dataset that complements PCA's global linear perspective by
+preserving local relationships between observations and revealing more
+nuanced data structure. The visualisation demonstrates that
+organisations are broadly grouped by female management representation
+levels, with Very Low (red) and Very High (purple) categories forming
+partial clusters at opposite ends of the embedding, while intermediate
+groups (Low, Moderate, High) exhibit greater overlap, suggesting gradual
+structural transitions rather than sharp boundaries. These patterns
+indicate that relationships between organisational features and
+management representation are non-linear in nature, driven by complex
+feature interactions that create subtle separations. The clearer
+clustering observed in t-SNE compared to PCA suggests that non-linear
+models such as XGBoost and Decision Trees may be better suited to
+capture these intricate patterns and potentially improve predictive
+performance over purely linear approaches.
+
+## Modelling Plan
+
+A combination of linear, distance-based, tree-based, kernel-based, and
+ensemble algorithms was implemented to compare interpretability and
+predictive accuracy across models of increasing complexity. All models
+were trained within the **caret** framework using identical **five-fold
+stratified cross-validation**, ensuring fair and directly comparable
+evaluation. Predictor preprocessing steps (centering, scaling, and
+removal of zero-variance features) were applied consistently across all
+models.
+
+### Model Selection and Hyperparameter Tuning
+
+```{r}
+library(knitr)
+library(kableExtra)
+
+model_table <- tribble(
+  ~Model, ~Rationale, ~Tuning_Method, ~Hyperparameters_Search, ~Final_Parameters,
+  
+  # Multinomial Logistic Regression
+  "Multinomial Logistic Regression (MLR)",
+  "Serves as a transparent linear baseline to quantify directional relationships between organisational features and management representation levels.",
+  "Default optimisation",
+  "No explicit tuning. *Ridge and Lasso regression were tested but excluded for conciseness due to minimal performance difference.*",
+  "N/A",
+  
+  # KNN
+  "K-Nearest Neighbours (KNN)",
+  "Captures non-linear, similarity-based relationships in the data space, complementing linear models.",
+  "Manual grid search",
+  "`k ∈ {3–50}` (48 evenly spaced values)",
+  "`k = 31`",
+  
+  # Decision Tree
+  "Decision Tree",
+  "Provides interpretable, rule-based splits and captures threshold effects in quantitative features.",
+  "Manual grid search",
+  "`cp ∈ [0.001, 0.1]` (1,000 evenly spaced values)",
+  "`cp = 0.0016`",
+  
+  # SVM
+  "Support Vector Machine (RBF Kernel)",
+  "Captures complex non-linear decision boundaries using kernel transformations, suitable for high-dimensional spaces.",
+  "Automatic search* (`tuneLength = 20`)",
+  "20 automatic combinations across `C` and `sigma`.",
+  "`C = 4`, `sigma = 0.0126`",
+  
+  # XGBoost
+  "XGBoost",
+  "High-performance ensemble model that captures complex feature interactions while maintaining robustness to overfitting.",
+  "Automatic search* (`tuneLength = 20`)",
+  "20 automatic combinations across `nrounds`, `max_depth`, `eta`, `gamma`, `colsample_bytree`, `min_child_weight`, and `subsample`.",
+  "`nrounds = 978`, `max_depth = 3`, `eta = 0.0952`, `gamma = 2.0184`, `colsample_bytree = 0.464`, `min_child_weight = 14`, `subsample = 0.995`"
+)
+
+model_table %>%
+  kbl(
+    align = "lllll",
+    escape = FALSE,
+    caption = "Model Overview, Tuning Approach, and Optimal Hyperparameters",
+    col.names = c(
+    "Model",
+    "Rationale",
+    "Tuning Method",
+    "Hyperparameters & Search Range",
+    "Final Cross-Validated Parameters"
+  )
+  ) %>%
+  kable_styling(
+    full_width = FALSE,
+    bootstrap_options = c("hover", "condensed"),
+    font_size = 12
+  ) %>%
+  row_spec(0, bold = TRUE) %>%
+  column_spec(1, bold = TRUE, width = "3cm") %>%
+  column_spec(2, width = "6cm") %>%
+  column_spec(3:5, width = "3cm")
+
+```
+
+
+All tuning procedures were conducted using **identical cross-validation
+folds** to ensure methodological consistency. None of the tuned
+parameters reached boundary values, confirming that the search space was
+sufficiently broad to capture near-optimal configurations.
+
+\**Note: SVM and XGBoost models were tuned using automatic
+hyperparameter search to reduce computation time, as even moderately
+spaced grid search required several hours (\>6 hours).*
+
+------------------------------------------------------------------------
+
+### Model Training Pipeline
+
+All models were trained and evaluated within a unified pipeline to
+ensure methodological consistency:
+
+1.  **Cross-Validation:** Stratified five-fold CV preserving class
+    balance across folds, with identical splits applied to all models.\
+2.  **Preprocessing:** Centering, scaling, and zero-variance feature
+    removal performed within each fold.\
+3.  **Probability Estimation:** Class probabilities extracted (where
+    supported) for AUC evaluation.
+
+This consistent framework ensures that observed performance differences
+reflect genuine algorithmic variation rather than preprocessing or
+sampling artefacts.
+
+------------------------------------------------------------------------
+
+### Evaluation Strategy
+
+Model performance is assessed using the **F1-score as the primary
+ranking metric**. As all five management representation categories are
+evenly distributed, it provides an unbiased measure of predictive
+performance across classes. 
+
+The following complementary metrics are also reported:
+
+-   **Precision:** The proportion of correct predictions within each
+    class, reflecting the model's ability to minimise false positives.
+
+-   **Recall:** The proportion of actual cases correctly identified,
+    reflecting the model's ability to minimise false negatives.
+
+-   **AUC:** Evaluates the model’s ability to distinguish each class
+    against all others across all decision thresholds. Higher values
+    indicate stronger class separability.
+
+-   **Mean Absolute Error (MAE):** The average ordinal distance between
+    predicted and actual classes, penalising predictions proportionally
+    to how far they deviate from the true class.
+
+------------------------------------------------------------------------
+
+## Results
+
+```{r fig.height=6, fig.width=15, message=FALSE, warning=FALSE}
+# Load saved variables to reduce knitting time between non-code edits (>6 hour model training time)
+setwd("~/Work/Masters Degree/STAT5003/Group Assignment/wgea_public_dataset_2024_v2")
+load("ReportData.RData")
+
+# # ============================================================
+# # Combined Model Training: Logistic, Ridge, Lasso, Tree, KNN, SVM, XGBoost
+# # All models use identical 5-fold cross-validation splits
+# # ============================================================
+# 
+# library(caret)
+# library(glmnet)
+# library(nnet)
+# library(rpart)
+# library(kernlab)
+# library(xgboost)
+# library(dplyr)
+# library(ggplot2)
+# library(stringr)
+# 
+# set.seed(5003)
+# 
+# # -----------------------------
+# # Prepare data
+# # -----------------------------
+# modeling_df <- composite_df %>%
+#   select(-employer_abn, -management_female_percent) %>%
+#   drop_na()
+# 
+# # Create consistent folds for all models
+# folds <- createFolds(modeling_df$management_representation_level, k = 5, returnTrain = TRUE)
+# 
+# # Define shared trainControl using the same folds
+# shared_control <- trainControl(
+#   method = "cv",
+#   number = 5,
+#   classProbs = TRUE,
+#   summaryFunction = multiClassSummary,
+#   savePredictions = "final",
+#   index = folds
+# )
+# 
+# # ============================================================
+# # 1. Multinomial Logistic Regression
+# # ============================================================
+# multinom_cv <- train(
+#   management_representation_level ~ .,
+#   data = modeling_df,
+#   preProcess = c("zv", "center", "scale"),
+#   method = "multinom",
+#   trControl = shared_control,
+#   trace = FALSE
+# )
+# 
+# 
+# # ============================================================
+# # 2. Decision Tree
+# # ============================================================
+# tree_cv <- train(
+#   management_representation_level ~ .,
+#   data = modeling_df,
+#   method = "rpart",
+#   trControl = shared_control,
+#   preProcess = c("zv", "center", "scale"),
+#   tuneGrid = expand.grid(cp = seq(0.0001, 0.1000, length = 1000))
+# )
+# 
+# # ============================================================
+# # 3. K-Nearest Neighbours
+# # ============================================================
+# knn_cv <- train(
+#   management_representation_level ~ .,
+#   data = modeling_df,
+#   method = "knn",
+#   trControl = shared_control,
+#   preProcess = c("zv", "center", "scale"),
+#   tuneGrid = expand.grid(k = seq(3, 50, by = 1))  # manually search from 3 to 50 neighbours
+# )
+# 
+# # ============================================================
+# # 4. Support Vector Machine
+# # ============================================================
+# svm_cv <- train(
+#   management_representation_level ~ .,
+#   data = modeling_df,
+#   method = "svmRadial",
+#   trControl = shared_control,
+#   preProcess = c("zv", "center", "scale"),
+#   tuneLength = 20,
+#   metric = "F1",
+#   verbose = FALSE
+# )
+# 
+# 
+# # ============================================================
+# # 5. XGBoost (Optimized Grid Search)
+# # ============================================================
+# xgb_cv <- train(
+#   management_representation_level ~ .,
+#   data = modeling_df,
+#   method = "xgbTree",
+#   trControl = shared_control,
+#   preProcess = c("zv", "center", "scale"),
+#   tuneLength = 20,
+#   metric = "F1",
+#   verbose = FALSE
+# )
+```
+
+### Model Results Summary
+
+```{r message=FALSE, warning=FALSE, fig.width=15, fig.height=6}
+library(caret)
+library(pROC)
+library(dplyr)
+library(knitr)
+library(kableExtra)
+
+# ============================================================
+# Extract Predictions for Confusion Matrices
+# ============================================================
+pred_multinom <- multinom_cv$pred
+pred_tree     <- tree_cv$pred
+pred_knn      <- knn_cv$pred
+pred_svm      <- svm_cv$pred
+pred_xgb      <- xgb_cv$pred
+
+# ============================================================
+# Confusion Matrices + AUCs
+# ============================================================
+cm_multinom <- confusionMatrix(pred_multinom$pred, pred_multinom$obs)
+auc_multinom <- multiclass.roc(pred_multinom$obs, as.numeric(pred_multinom$pred))$auc
+
+cm_tree <- confusionMatrix(pred_tree$pred, pred_tree$obs)
+auc_tree <- multiclass.roc(pred_tree$obs, as.numeric(pred_tree$pred))$auc
+
+cm_knn <- confusionMatrix(pred_knn$pred, pred_knn$obs)
+auc_knn <- multiclass.roc(pred_knn$obs, as.numeric(pred_knn$pred))$auc
+
+cm_svm <- confusionMatrix(pred_svm$pred, pred_svm$obs)
+auc_svm <- multiclass.roc(pred_svm$obs, as.numeric(pred_svm$pred))$auc
+
+cm_xgb <- confusionMatrix(pred_xgb$pred, pred_xgb$obs)
+auc_xgb <- multiclass.roc(pred_xgb$obs, as.numeric(pred_xgb$pred))$auc
+
+
+# ============================================================
+# Compute MAE for Ordinal Classes
+# ============================================================
+compute_mae <- function(obs, pred) {
+  obs_num <- as.numeric(factor(obs, levels = levels(obs)))
+  pred_num <- as.numeric(factor(pred, levels = levels(obs)))
+  mean(abs(obs_num - pred_num))
+}
+
+# ============================================================
+# Confusion Matrices + AUCs + MAEs
+# ============================================================
+get_metrics <- function(pred_df) {
+  cm <- confusionMatrix(pred_df$pred, pred_df$obs)
+  auc <- multiclass.roc(pred_df$obs, as.numeric(pred_df$pred))$auc
+  mae <- compute_mae(pred_df$obs, pred_df$pred)
+  list(cm = cm, auc = auc, mae = mae)
+}
+
+metrics_multinom <- get_metrics(pred_multinom)
+metrics_tree     <- get_metrics(pred_tree)
+metrics_knn      <- get_metrics(pred_knn)
+metrics_svm      <- get_metrics(pred_svm)
+metrics_xgb      <- get_metrics(pred_xgb)
+
+# ============================================================
+# Macro-Averaged Metrics Function (Now Includes MAE)
+# ============================================================
+macro_metrics <- function(metrics) {
+  df <- as.data.frame(metrics$cm$byClass)
+  data.frame(
+    F1 = mean(df$F1, na.rm = TRUE),
+    Precision = mean(df$Precision, na.rm = TRUE),
+    Recall = mean(df$Recall, na.rm = TRUE),
+    AUC = as.numeric(metrics$auc),
+    MAE = metrics$mae
+  )
+}
+
+# ============================================================
+# Combine All Results into a Single Table
+# ============================================================
+results_df <- bind_rows(
+  XGBoost              = macro_metrics(metrics_xgb),
+  Decision_Tree        = macro_metrics(metrics_tree),
+  SVM                  = macro_metrics(metrics_svm),
+  Multinomial_Logistic = macro_metrics(metrics_multinom),
+  KNN                  = macro_metrics(metrics_knn),
+  .id = "Model"
+) %>%
+  mutate(across(where(is.numeric), ~ round(., 3)))
+
+# ============================================================
+# Display Table
+# ============================================================
+results_df %>%
+  kable(
+    caption = "Model Results Summary",
+    col.names = c("Model", "F1", "Precision", "Recall", "AUC", "MAE"),
+    align = "lccccc",
+    format = "html"
+  ) %>%
+  kable_styling(
+    bootstrap_options = c("condensed"),
+    full_width = FALSE,
+    position = "center",
+    font_size = 12
+  ) %>%
+  row_spec(0, bold = TRUE, extra_css = "padding: 4px 8px;") %>%
+  row_spec(1:nrow(results_df), extra_css = "padding: 2px 8px; line-height: 1.2;") %>%
+  column_spec(1, bold = TRUE) %>%
+  add_header_above(c(" " = 1, "Macro-Averaged Metrics" = 5))
+```
+
+The results demonstrate clear performance differences across models,
+with XGBoost achieving the highest F1-score (0.677) and AUC (0.908),
+indicating superior predictive accuracy and class separation capability.
+The Decision Tree performed comparably (F1 = 0.648, AUC = 0.896), though
+its simpler structure resulted in slightly reduced accuracy, while SVM
+achieved similar results (F1 = 0.632, AUC = 0.897) but exhibited some
+difficulty with overlapping class boundaries. Multinomial Logistic
+Regression provided a strong linear baseline (F1 = 0.623, AUC = 0.895),
+effectively capturing key relationships while maintaining
+interpretability, whereas KNN performed weakest (F1 = 0.507, AUC =
+0.843), likely due to challenges with high dimensionality and
+sensitivity to feature scaling. Overall, XGBoost proved most effective
+at capturing the complex, non-linear patterns influencing female
+management representation, justifying its selection as the optimal model
+for this classification task.
+
+------------------------------------------------------------------------
+
+### Confusion Matrix Analysis
+
+```{r fig-confmatrix, fig.cap="Confusion Matrix", message=FALSE, warning=FALSE, fig.width=12, fig.height=6}
+# ============================================================
+# Confusion Matrix Heatmaps (Normalized by Actual Class)
+# ============================================================
+
+library(ggplot2)
+library(dplyr)
+
+# Combine all confusion matrices
+cm_list <- list(
+  "Multinomial" = cm_multinom,
+  "Tree" = cm_tree,
+  "KNN" = cm_knn,
+  "SVM" = cm_svm,
+  "XGBoost" = cm_xgb
+)
+
+# Build a combined and normalized dataframe
+cm_df <- bind_rows(lapply(names(cm_list), function(model) {
+  df <- as.data.frame(cm_list[[model]]$table)
+  names(df) <- c("Predicted", "Actual", "Count")
+  df$Model <- model
+  df %>%
+    group_by(Actual) %>%
+    mutate(Percent = Count / sum(Count) * 100)
+}))
+
+cm_df <- cm_df %>%
+  mutate(
+    Model = factor(Model, levels = c("XGBoost", "Tree", "SVM", "Multinomial", "KNN"  )),
+    Actual = factor(Actual, levels = c("V.Low", "Low", "Mod", "High", "V.High")),
+    Predicted = factor(Predicted, levels = c("V.Low", "Low", "Mod", "High", "V.High"))
+  )
+
+# ============================================================
+# Plot normalized confusion matrices side-by-side
+# ============================================================
+ggplot(cm_df, aes(x = Actual, y = Predicted, fill = Percent)) +
+  geom_tile(color = "white") +
+  geom_text(aes(label = sprintf("%.1f%%", Percent)), size = 4) +
+  scale_fill_gradient(low = "#f7fbff", high = "#08519c") +
+  facet_wrap(~ Model, ncol = 3) +
+  theme_minimal(base_size = 13) +
+  theme(
+    strip.text = element_text(face = "bold", size = 13),
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 12),
+    axis.text.y = element_text(size = 12),
+    axis.title.x = element_text(size = 12, face = "bold"),
+    axis.title.y = element_text(size = 12, face = "bold"),
+    legend.title = element_text(size = 11),
+    legend.text = element_text(size = 10)
+  ) +
+  labs(
+    x = "Actual Management Representation Level",
+    y = "Predicted Level",
+    fill = "%"
+  )
+
+```
+
+The confusion matrices reveal consistent patterns across all models,
+with stronger performance at extreme categories (Very Low and Very High)
+and greater overlap in middle categories, reflecting the ordinal nature
+of the classification task. XGBoost and Decision Tree models achieved
+the clearest diagonals, correctly identifying most organisations in the
+Very Low and Very High female management categories, though they
+exhibited moderate confusion between adjacent classes such as Low versus
+Moderate, which is expected given gradual transitions in workforce
+composition. SVM and Multinomial Logistic Regression demonstrated solid
+performance with slightly more dispersion across neighboring levels,
+indicating reduced precision at class boundaries, while KNN exhibited
+substantial misclassification across all categories, particularly
+underestimating mid-level organisations. Overall, the confusion matrices
+confirm that while all models distinguish extreme cases most
+effectively, ensemble and tree-based approaches, especially XGBoost,
+capture the underlying structure of management representation with
+superior accuracy and consistency.
+
+------------------------------------------------------------------------
+
+### Training vs Cross Validation Accuracy
+
+```{r}
+models <- list(
+  "Multinomial" = multinom_cv,
+  "Tree" = tree_cv,
+  "KNN" = knn_cv,
+  "XGBoost" = xgb_cv,
+  "SVM" = svm_cv
+)
+
+accuracy_comparison <- lapply(models, function(model) {
+  train_acc <- mean(predict(model, newdata = modeling_df) == modeling_df$management_representation_level)
+  cv_acc <- mean(model$resample$Accuracy)
+  data.frame(
+    Model = model$method,
+    Train = round(train_acc, 3),
+    CV = round(cv_acc, 3),
+    Gap = round(train_acc - cv_acc, 3)
+  )
+}) %>% bind_rows()
+
+accuracy_comparison %>%
+  kbl(
+    caption = "Training vs CV Accuracy",
+    col.names = c("Model", "Train Accuracy", "CV Accuracy", "Gap"),
+    align = "lccc",
+    format = "html"
+  ) %>%
+  kable_styling(
+    bootstrap_options = c("condensed"),
+    full_width = FALSE,
+    position = "center",
+    font_size = 12
+  ) %>%
+  row_spec(0, bold = TRUE, extra_css = "padding: 4px 8px;") %>%
+  row_spec(1:nrow(accuracy_comparison), extra_css = "padding: 2px 8px; line-height: 1.2;") %>%
+  column_spec(1, bold = TRUE)
+```
+
+The training versus cross-validation accuracy comparison reveals varying
+degrees of model generalisation across classifiers, with Multinomial
+Logistic Regression demonstrating the smallest performance gap (0.025),
+indicating stable generalisation and minimal overfitting consistent with
+its linear and regularised structure. Decision Tree and k-Nearest
+Neighbours models also display relatively small gaps (0.036 and 0.038
+respectively), suggesting moderate complexity and balanced bias-variance
+trade-offs, while SVM and XGBoost achieve the highest training
+accuracies but exhibit noticeably larger gaps (0.135 and 0.124
+respectively), reflecting overfitting to the training data. This pattern
+is attributable to the greater model flexibility of SVM and XGBoost,
+combined with practical constraints of limited hyperparameter tuning due
+to extended training times of several hours. Consequently, while these
+non-linear models effectively capture complex feature interactions,
+their generalisation performance suffers compared to simpler and faster
+models which maintains more consistent accuracy across training and
+validation folds.
+
+------------------------------------------------------------------------
+
+### Feature importance
+
+For conciseness, this section focuses on the Multinomial Logistic
+Regression model, which offers clear coefficient-based insights into
+feature effects. The feature importance results for the tree-based
+models (Decision Tree and XGBoost) are presented in the Appendix for
+reference.
+
+[Table 4: Top 3 Overall Features (Left) vs Top 3 Policy Features (Right)
+by
+Class]{style="color: #6e6e6e; font-size: 115%; font-family:Helvetica, Arial, sans-serif;"}
+
+```{r top_features_combined, message=FALSE, warning=FALSE, fig.width=15, fig.height=6}
+# ============================================================
+# Combined Display: Top Overall Features + Top Policy Features
+# ============================================================
+library(dplyr)
+library(broom)
+library(knitr)
+library(kableExtra)
+library(htmltools)
+
+# ---------- Common setup ----------
+coef_all <- tidy(multinom_cv$finalModel) %>%
+  filter(term != "(Intercept)") %>%
+  rename(Feature = term, Class = y.level, Coefficient = estimate, StdError = std.error) %>%
+  mutate(
+    z_value = abs(Coefficient / StdError),
+    Stars = case_when(
+      z_value > 2.58 ~ "***",   # p < 0.01
+      z_value > 1.96 ~ "**",    # p < 0.05
+      z_value > 1.64 ~ "*",     # p < 0.10
+      TRUE ~ ""
+    ),
+    Formatted = sprintf("%.3f%s", Coefficient, Stars),
+    Class = factor(Class, levels = c("Low", "Mod", "High", "V.High"))
+  )
+
+# ---------- Top 3 overall features per class ----------
+top_by_class <- coef_all %>%
+  group_by(Class) %>%
+  arrange(desc(abs(Coefficient)), .by_group = TRUE) %>%
+  slice_head(n = 3) %>%
+  ungroup() %>%
+  select(Class, Feature, Formatted)
+
+table1 <- kbl(
+  top_by_class,
+  align = "lcc",
+  col.names = c("Class", "Top Overall Feature", "Coefficient")
+) %>%
+  kable_styling(
+    full_width = FALSE,
+    bootstrap_options = c("condensed"),
+    font_size = 12,
+    position = "left"
+  ) %>%
+  collapse_rows(columns = 1, valign = "middle") %>%
+  row_spec(0, bold = TRUE, extra_css = "padding: 4px 8px;") %>%
+  row_spec(1:nrow(top_by_class), extra_css = "padding: 2px 8px; line-height: 1.2;")
+
+# ---------- Top 3 policy (binary) features per class ----------
+binary_vars <- c(
+  "has_gender_equality_strategy",
+  "has_target_for_gender_equity",
+  "has_policy_for_gender_equality",
+  "has_target_for_women_in_governing_body",
+  "has_pay_equity_strategy",
+  "did_pay_gap_analysis",
+  "actioned_on_pay_gap_analysis",
+  "consulted_employee_on_equity",
+  "has_flexible_work_policy",
+  "offers_working_from_home",
+  "offers_paid_primary_carer_leave",
+  "offers_paid_secondary_carer_leave",
+  "opt_out_approach_for_parental_leave",
+  "has_strategy_for_employee_with_family",
+  "has_target_for_men_parental_leave",
+  "gender_equality_training_for_managers"
+)
+
+top_bin_by_class <- coef_all %>%
+  filter(Feature %in% binary_vars) %>%
+  group_by(Class) %>%
+  arrange(desc(abs(Coefficient)), .by_group = TRUE) %>%
+  slice_head(n = 3) %>%
+  ungroup() %>%
+  select(Class, Feature, Formatted)
+
+table2 <- kbl(
+  top_bin_by_class,
+  align = "lcc",
+  col.names = c("Class", "Top Policy Feature", "Coefficient")
+) %>%
+  kable_styling(
+    full_width = FALSE,
+    bootstrap_options = c("condensed"),
+    font_size = 12,
+    position = "left"
+  ) %>%
+  collapse_rows(columns = 1, valign = "middle") %>%
+  row_spec(0, bold = TRUE, extra_css = "padding: 4px 8px;") %>%
+  row_spec(1:nrow(top_bin_by_class), extra_css = "padding: 2px 8px; line-height: 1.2;") 
+
+# ---------- Combine and render properly ----------
+HTML(paste0(
+  '<div style="display: flex; justify-content: space-between; gap: 2%; align-items: flex-start;">',
+  '<div style="width: 48%;">', table1, '</div>',
+  '<div style="width: 48%;">', table2, '</div>',
+  '</div>'
+))
+
+```
+
+The MLR results reveal that workforce composition serves as the
+strongest predictor of female management representation, with the
+proportion of full-time female employees and female executives showing
+substantial positive effects that increase progressively from Low to
+Very High categories. The Health Care and Social Assistance industry
+consistently displays negative coefficients despite high overall female
+participation, suggesting persistent structural barriers to management
+advancement, while the negative effect of overall full-time employment
+at higher management levels implies that industries offering greater
+workplace flexibility may better support women's progression into
+leadership positions.
+
+When controlling for workforce composition, flexible work policies
+emerge as the most consistent and statistically significant
+policy-related enabler across management levels, alongside positive
+effects from targets for women in governing bodies and gender equality
+training for managers. In contrast, pay equity strategies and pay gap
+analysis display small negative coefficients, likely reflecting reactive
+adoption by organisations still addressing underlying structural
+imbalances. Overall, while workforce composition remains the dominant
+factor, proactive organisational policies promoting flexibility and
+leadership accountability serve as important complementary enablers of
+gender equity in leadership roles.
+
+------------------------------------------------------------------------
+
+## Conclusion and Future Work
+
+### Summary
+
+This analysis demonstrates the effectiveness of applying diverse machine
+learning algorithms to a high-dimensional multi-class classification
+problem. Among the five models evaluated (XGBoost, Decision Tree, SVM,
+Multinomial Logistic Regression, and KNN) XGBoost achieved the best
+performance with a macro F1-score of 0.677 and AUC of 0.908,
+demonstrating the advantages of ensemble methods in capturing complex
+non-linear relationships, though at the cost of longer training times
+and greater overfitting compared to simpler models. Decision Trees and
+SVM also performed well (F1 ≈ 0.65 and 0.63 respectively), while KNN
+struggled with the high-dimensional feature space. Feature importance
+analysis consistently identified workforce composition variables,
+particularly the proportion of women in full-time and executive
+positions, as the dominant predictors across all models, while binary
+policy indicators contributed meaningful but substantially weaker
+predictive signals.
+
+------------------------------------------------------------------------
+
+### Limitations and Future Work
+
+Several important limitations constrain the interpretation of these
+findings. The cross-sectional nature of the data prevents causal claims
+about what drives changes in female management representation, allowing
+only identification of associations between organisational
+characteristics and current representation levels. Self-reporting by
+organisations may introduce systematic biases, while the decision to
+categorise organisations into five quintile-based groups may obscure
+important within-category variation and create artificial boundaries
+between similar organisations.
+
+Future research should address these limitations through longitudinal
+analysis using multiple years of WGEA data, enabling examination of
+whether changes in workforce composition or policy adoption lead to
+subsequent improvements in management representation. Methodologically,
+treating the target variable as continuous rather than categorical could
+simplify the modeling approach and potentially improve predictive
+accuracy, while incorporating additional contextual variables such as
+organisational culture surveys and geographical economic conditions
+could provide richer understanding of factors shaping gender equity
+outcomes.
+
+## Appendix
+
+### Raw Data File Summary
+
+The table below summarises these seven source files, including their
+dimensions and the number of numerical and categorical features within
+each dataset. The high row counts seen across all files are a direct
+result of this granular, one-to-many structure (one employer to many
+rows).
+
+```{r compact-dataset-summary, echo=FALSE, message=FALSE, warning=FALSE}
+library(kableExtra)
+
+# Create the data frame with the new combined 'Details' column
+datasets <- data.frame(
+  Name = c(
+    "Workforce Composition",
+    "Workforce Management Statistics",
+    "Harm Prevention",
+    "Action on Gender Equality",
+    "Flexible Work",
+    "Workplace Overview",
+    "Employee Support"
+  ),
+  Details = c(
+    "193916 × 17<br>(2 Num, 15 Cat)",
+    "186831 × 18<br>(2 Num, 16 Cat)",
+    "508476 × 20<br>(1 Num, 19 Cat)",
+    "129313 × 20<br>(1 Num, 19 Cat)",
+    "222858 × 20<br>(1 Num, 19 Cat)",
+    "178111 × 20<br>(1 Num, 19 Cat)",
+    "289830 × 20<br>(1 Num, 19 Cat)"
+  ),
+  Description = c(
+    "Detailed employee counts by occupation, manager category, employment status, type, and gender, giving a breakdown of workforce structure across employers and industries.",
+    "Quantitative statistics related to workforce movements (e.g., promotions, resignations, leave uptake) for each organisation, disaggregated by gender, employment status, and managerial category.",
+    "Questionnaire on policies and initiatives aimed at preventing workplace harm.",
+    "Questionaire on emploter's actions, policies, and initiatives related to promoting gender equality.",
+    "Questionnaire on the employer's flexible work policies and practices.",
+    "Questionnaire on key organisational attributes and responses to broad workplace-related employer practices and structures.",
+    "Questionnaire on measures organisations have in place to support employees wellbeing."
+  ),
+  check.names = FALSE,
+  stringsAsFactors = FALSE
+)
+
+datasets %>%
+  kbl(
+    col.names = c(
+      "Name",
+      "Dimensions<br>(Rows×Cols)",
+      "Description"
+    ),
+    escape = FALSE,
+    booktabs = TRUE
+  ) %>%
+  kable_styling(
+    bootstrap_options = c("condensed"),
+    full_width = TRUE,
+    font_size = 12,
+    position = "center",
+    latex_options = "scale_down"
+  ) %>%
+  column_spec(1, width = "7em") %>%
+  column_spec(2, width = "9em") %>%
+  column_spec(3, width = "35em") %>%
+  row_spec(0, bold = TRUE, extra_css = "padding: 4px 8px;") %>%
+  row_spec(1:nrow(datasets), extra_css = "padding: 2px 8px; line-height: 1.2;") %>%
+  row_spec(0, extra_latex_after = "\\renewcommand{\\arraystretch}{0.9}")
+```
+
+### Top Features - Decision Tree
+
+```{r fig-DecisionTreeFeature, fig.cap="Top Decision Tree Features", fig.height=4, fig.width=6}
+# ============================================================
+# DECISION TREE FEATURE IMPORTANCE
+# ============================================================
+binary_vars <- c(
+  "has_gender_equality_strategy",
+  "has_target_for_gender_equity",
+  "has_policy_for_gender_equality",
+  "has_target_for_women_in_governing_body",
+  "has_pay_equity_strategy",
+  "did_pay_gap_analysis",
+  "actioned_on_pay_gap_analysis",
+  "consulted_employee_on_equity",
+  "has_flexible_work_policy",
+  "offers_working_from_home",
+  "offers_paid_primary_carer_leave",
+  "offers_paid_secondary_carer_leave",
+  "opt_out_approach_for_parental_leave",
+  "has_strategy_for_employee_with_family",
+  "has_target_for_men_parental_leave",
+  "gender_equality_training_for_managers"
+)
+
+dt_imp <- varImp(tree_cv)$importance %>%
+  rownames_to_column("Feature") %>%
+  arrange(desc(Overall))
+
+# --- Top 5 overall ---
+dt_top5 <- dt_imp %>% slice_head(n = 5)
+
+# --- Top 5 policy-related features ---
+dt_policy <- dt_imp %>%
+  filter(Feature %in% binary_vars) %>%
+  slice_head(n = 5)
+
+# --- Plot: Top 5 overall ---
+p_dt_top5 <- ggplot(dt_top5, aes(x = reorder(Feature, Overall), y = Overall)) +
+  geom_col(fill = "#3182bd") +
+  coord_flip() +
+  labs(
+    title = "Top 5 Most Important Features (Decision Tree)",
+    x = "Feature",
+    y = "Importance"
+  ) +
+  theme_minimal(base_size = 12)
+
+# --- Plot: Top 5 policy features ---
+p_dt_policy <- ggplot(dt_policy, aes(x = reorder(Feature, Overall), y = Overall)) +
+  geom_col(fill = "#6baed6") +
+  coord_flip() +
+  labs(
+    title = "Top 5 Policy Features (Decision Tree)",
+    x = "Policy Feature",
+    y = "Importance"
+  ) +
+  theme_minimal(base_size = 12)
+
+# --- Combine DT plots vertically ---
+(p_dt_top5 / p_dt_policy) +
+  plot_annotation(title = "Decision Tree Feature Importance") &
+  theme(plot.title = element_text(face = "bold", hjust = 0.5))
+```
+
+*Note: The limited number of policy features in the figure reflects the
+Decision Tree’s complexity pruning, which retained only two
+policy-related variables after model optimisation.*
+
+------------------------------------------------------------------------
+
+### Top Features - XGBoost
+
+```{r fig-XGBoostFeatures, fig.cap="Top XGBoost Features", fig.height=4, fig.width=6}
+# ============================================================
+# XGBOOST FEATURE IMPORTANCE
+# ============================================================
+
+xgb_imp <- varImp(xgb_cv)$importance %>%
+  rownames_to_column("Feature") %>%
+  arrange(desc(Overall))
+
+# --- Top 5 overall ---
+xgb_top5 <- xgb_imp %>% slice_head(n = 5)
+
+# --- Top 5 policy-related features ---
+xgb_policy <- xgb_imp %>%
+  filter(grepl("has_|offers_|did_|actioned_|gender_|target_", Feature)) %>%
+  slice_head(n = 5)
+
+# --- Plot: Top 5 overall ---
+p_xgb_top5 <- ggplot(xgb_top5, aes(x = reorder(Feature, Overall), y = Overall)) +
+  geom_col(fill = "#e6550d") +
+  coord_flip() +
+  labs(
+    title = "Top 5 Most Important Features (XGBoost)",
+    x = "Feature",
+    y = "Importance"
+  ) +
+  theme_minimal(base_size = 12)
+
+# --- Plot: Top 5 policy features ---
+p_xgb_policy <- ggplot(xgb_policy, aes(x = reorder(Feature, Overall), y = Overall)) +
+  geom_col(fill = "#fd8d3c") +
+  coord_flip() +
+  labs(
+    title = "Top 5 Policy Features (XGBoost)",
+    x = "Policy Feature",
+    y = "Importance"
+  ) +
+  theme_minimal(base_size = 12)
+
+# --- Combine XGB plots vertically ---
+(p_xgb_top5 / p_xgb_policy) +
+  plot_annotation(title = "XGBoost Feature Importance") &
+  theme(plot.title = element_text(face = "bold", hjust = 0.5))
+
+```
+
+## References
+
+[1] Workplace Gender Equality Agency and Bankwest Curtin Economics
+Centre, Gender Equity Insights 2020: Delivering on Business Outcomes.
+Perth, WA: WGEA and BCEC, 2020. [Online]. Available:
+<https://www.wgea.gov.au/sites/default/files/documents/BCEC%20WGEA%20Media%20Release%20-%20More%20women%20at%20the%20top%20proves%20better%20for%20business.pdf>
+[Accessed: Oct. 30, 2025]
+
+[2] Workplace Gender Equality Agency, "WGEA Public Dataset 2024,"
+*data.gov.au*, Jul. 30, 2025. [Online]. Available:
+<https://data.gov.au/data/dataset/wgea-dataset/resource/f12cc138-44a8-45fc-9ba7-97ee5dadd683>.
+[Accessed: Sep. 21, 2025].
+
+## Generative-AI Declaration
+
+Generative AI was used in the preparation of this report. It helped
+generate R code based on our specified analysis plan and helped draft
+paragraphs from our prompts. All core intellectual contributions, from
+the initial strategy to the final conclusions, are our own, and all
+AI-generated text was critically reviewed and edited by the authors.
+
