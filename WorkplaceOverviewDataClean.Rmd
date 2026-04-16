@@ -1,0 +1,575 @@
+---
+title: "WGEA Dataset Analysis - Combined Dataset"
+author: "Analysis Team"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+library(dplyr)
+library(readr)
+library(janitor)
+```
+
+## Loading and Combining WGEA Datasets
+
+This document combines all WGEA datasets based on the Australian Business Number (ABN) and removes duplicate features.
+
+```{r load-data}
+# Load all datasets
+action_on_gender <- read_csv("wgea_public_dataset_2024/wgea_questionnaire_action_on_gender_equality_2024.csv")
+employee_support <- read_csv("wgea_public_dataset_2024/wgea_questionnaire_employee_support_2024.csv")
+flexible_work <- read_csv("wgea_public_dataset_2024/wgea_questionnaire_flexible_work_2024.csv")
+harm_prevention <- read_csv("wgea_public_dataset_2024/wgea_questionnaire_harm_prevention_2024.csv")
+workplace_overview <- read_csv("wgea_public_dataset_2024/wgea_questionnaire_workplace_overview_2024.csv")
+workforce_composition <- read_csv("wgea_public_dataset_2024/wgea_workforce_composition_2024.csv")
+workforce_management <- read_csv("wgea_public_dataset_2024/wgea_workforce_management_statistics_2024.csv")
+
+# Note: wgea_questionnaire_catalogue_2024.csv is a reference table without ABN, so we'll handle it separately
+catalogue <- read_csv("wgea_public_dataset_2024/wgea_questionnaire_catalogue_2024.csv")
+
+print("Datasets loaded successfully!")
+```
+
+```{r examine-structure}
+# Examine the structure of each dataset
+cat("Action on Gender Equality dimensions:", dim(action_on_gender), "\n")
+cat("Employee Support dimensions:", dim(employee_support), "\n")
+cat("Flexible Work dimensions:", dim(flexible_work), "\n")
+cat("Harm Prevention dimensions:", dim(harm_prevention), "\n")
+cat("Workplace Overview dimensions:", dim(workplace_overview), "\n")
+cat("Workforce Composition dimensions:", dim(workforce_composition), "\n")
+cat("Workforce Management dimensions:", dim(workforce_management), "\n")
+cat("Catalogue dimensions:", dim(catalogue), "\n")
+```
+
+```{r identify-common-columns}
+# Identify common columns across datasets (excluding catalogue)
+datasets_with_abn <- list(
+  action_on_gender = action_on_gender,
+  employee_support = employee_support,
+  flexible_work = flexible_work,
+  harm_prevention = harm_prevention,
+  workplace_overview = workplace_overview,
+  workforce_composition = workforce_composition,
+  workforce_management = workforce_management
+)
+
+# Get column names for each dataset
+column_names <- lapply(datasets_with_abn, names)
+
+# Find common columns across all datasets
+common_cols <- Reduce(intersect, column_names)
+cat("Common columns across all datasets:\n")
+print(common_cols)
+
+# Find unique columns in each dataset
+unique_cols <- lapply(names(datasets_with_abn), function(dataset_name) {
+  cols <- column_names[[dataset_name]]
+  unique_cols <- setdiff(cols, common_cols)
+  cat("\nUnique columns in", dataset_name, ":\n")
+  print(unique_cols)
+  return(unique_cols)
+})
+names(unique_cols) <- names(datasets_with_abn)
+```
+
+```{r create-base-dataset}
+# Create a base dataset with unique employer information
+# Using workforce_composition as it has the most comprehensive employer info
+base_employer_info <- workforce_composition %>%
+  select(all_of(common_cols)) %>%
+  distinct() %>%
+  arrange(employer_abn)
+
+cat("Base employer information created with", nrow(base_employer_info), "unique employers\n")
+```
+
+```{r combine-questionnaire-data}
+# Combine all questionnaire datasets
+# These have similar structure with questions and responses
+
+questionnaire_datasets <- list(
+  action_on_gender = action_on_gender,
+  employee_support = employee_support,
+  flexible_work = flexible_work,
+  harm_prevention = harm_prevention,
+  workplace_overview = workplace_overview
+)
+
+# Add a source column to track which dataset each record came from
+questionnaire_combined <- bind_rows(
+  action_on_gender %>% mutate(data_source = "action_on_gender"),
+  employee_support %>% mutate(data_source = "employee_support"),
+  flexible_work %>% mutate(data_source = "flexible_work"),
+  harm_prevention %>% mutate(data_source = "harm_prevention"),
+  workplace_overview %>% mutate(data_source = "workplace_overview")
+)
+
+cat("Combined questionnaire data has", nrow(questionnaire_combined), "rows\n")
+```
+
+```{r process-workforce-data}
+# Process workforce composition data
+workforce_comp_processed <- workforce_composition %>%
+  mutate(data_source = "workforce_composition")
+
+# Process workforce management data  
+workforce_mgmt_processed <- workforce_management %>%
+  mutate(data_source = "workforce_management")
+
+cat("Workforce composition data:", nrow(workforce_comp_processed), "rows\n")
+cat("Workforce management data:", nrow(workforce_mgmt_processed), "rows\n")
+```
+
+```{r create-combined-dataset}
+# Create the final combined dataset
+# Since the data structures are quite different, we'll create separate summary views
+
+# 1. Employer-level summary combining all unique employer attributes
+employer_summary <- base_employer_info %>%
+  group_by(employer_abn, corporate_group_name, employer_name, employer_size, 
+           anzsic_code, anzsic_division, anzsic_subdivision, anzsic_group, anzsic_class) %>%
+  summarise(
+    reporting_year = first(reporting_year),
+    is_relevant_employer = first(is_relevant_employer),
+    .groups = "drop"
+  )
+
+# 2. Add questionnaire response counts by employer
+questionnaire_summary <- questionnaire_combined %>%
+  group_by(employer_abn) %>%
+  summarise(
+    total_questionnaire_responses = n(),
+    action_on_gender_responses = sum(data_source == "action_on_gender"),
+    employee_support_responses = sum(data_source == "employee_support"),
+    flexible_work_responses = sum(data_source == "flexible_work"),
+    harm_prevention_responses = sum(data_source == "harm_prevention"),
+    workplace_overview_responses = sum(data_source == "workplace_overview"),
+    .groups = "drop"
+  )
+
+# 3. Add workforce composition summary
+workforce_comp_summary <- workforce_comp_processed %>%
+  group_by(employer_abn) %>%
+  summarise(
+    total_employees = sum(n_employees, na.rm = TRUE),
+    unique_occupations = n_distinct(occupation, na.rm = TRUE),
+    unique_manager_categories = n_distinct(manager_category, na.rm = TRUE),
+    male_employees = sum(n_employees[gender == "Male"], na.rm = TRUE),
+    female_employees = sum(n_employees[gender == "Female"], na.rm = TRUE),
+    .groups = "drop"
+  )
+
+# 4. Add workforce management summary
+workforce_mgmt_summary <- workforce_mgmt_processed %>%
+  group_by(employer_abn) %>%
+  summarise(
+    total_workforce_movements = sum(n_employees, na.rm = TRUE),
+    unique_movement_types = n_distinct(movement_type, na.rm = TRUE),
+    unique_manager_types = n_distinct(manager_type, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+# Combine all summaries
+combined_dataset <- employer_summary %>%
+  left_join(questionnaire_summary, by = "employer_abn") %>%
+  left_join(workforce_comp_summary, by = "employer_abn") %>%
+  left_join(workforce_mgmt_summary, by = "employer_abn") %>%
+  # Replace NA values with 0 for count variables
+  mutate(across(ends_with("_responses") | starts_with("total_") | starts_with("unique_") | 
+                ends_with("_employees"), ~ ifelse(is.na(.), 0, .)))
+
+cat("Final combined dataset created with", nrow(combined_dataset), "employers and", ncol(combined_dataset), "variables\n")
+```
+
+```{r examine-final-dataset}
+# Examine the final combined dataset
+cat("Final dataset structure:\n")
+str(combined_dataset)
+
+cat("\nFirst few rows of the combined dataset:\n")
+head(combined_dataset)
+
+cat("\nSummary statistics:\n")
+summary(combined_dataset %>% select_if(is.numeric))
+```
+
+```{r save-combined-dataset}
+# Save the combined dataset
+write_csv(combined_dataset, "wgea_combined_dataset_2024.csv")
+
+cat("Combined dataset saved as 'wgea_combined_dataset_2024.csv'\n")
+cat("Dataset contains", nrow(combined_dataset), "unique employers with comprehensive information\n")
+```
+
+```{r data-quality-checks}
+# Perform data quality checks
+cat("Data Quality Summary:\n")
+cat("- Total unique employers:", n_distinct(combined_dataset$employer_abn), "\n")
+cat("- Employers with questionnaire responses:", sum(combined_dataset$total_questionnaire_responses > 0), "\n")
+cat("- Employers with workforce composition data:", sum(combined_dataset$total_employees > 0), "\n")
+cat("- Employers with workforce management data:", sum(combined_dataset$total_workforce_movements > 0), "\n")
+
+# Check for any duplicate ABNs (should be 0)
+duplicates <- combined_dataset %>%
+  group_by(employer_abn) %>%
+  summarise(count = n()) %>%
+  filter(count > 1)
+
+cat("- Duplicate ABNs in final dataset:", nrow(duplicates), "\n")
+
+# Display column names and data types
+cat("\nFinal dataset columns:\n")
+combined_dataset %>% 
+  summarise_all(class) %>% 
+  gather(variable, class) %>%
+  print()
+```
+
+```{r feature-engineering-for-classification}
+# Feature Engineering for Female Management Representation Classification
+
+# First, let's create detailed management and gender statistics from workforce composition
+management_gender_stats <- workforce_composition %>%
+  filter(!is.na(manager_category) & manager_category != "" & 
+         !is.na(gender) & gender %in% c("Male", "Female")) %>%
+  group_by(employer_abn, manager_category, gender) %>%
+  summarise(n_managers = sum(n_employees, na.rm = TRUE), .groups = "drop") %>%
+  pivot_wider(names_from = gender, values_from = n_managers, values_fill = 0) %>%
+  mutate(
+    total_managers_by_category = Male + Female,
+    female_proportion_by_category = ifelse(total_managers_by_category > 0, 
+                                         Female / total_managers_by_category, 0)
+  )
+
+# Aggregate management statistics by employer
+employer_management_stats <- management_gender_stats %>%
+  group_by(employer_abn) %>%
+  summarise(
+    total_male_managers = sum(Male),
+    total_female_managers = sum(Female),
+    total_managers = sum(total_managers_by_category),
+    avg_female_mgmt_proportion = mean(female_proportion_by_category, na.rm = TRUE),
+    weighted_female_mgmt_proportion = ifelse(total_managers > 0, 
+                                           total_female_managers / total_managers, 0),
+    mgmt_categories_count = n_distinct(manager_category),
+    # Management diversity metrics
+    mgmt_categories_with_females = sum(Female > 0),
+    mgmt_categories_female_majority = sum(female_proportion_by_category > 0.5),
+    mgmt_gender_balance_score = 1 - abs(0.5 - weighted_female_mgmt_proportion) * 2,
+    .groups = "drop"
+  )
+
+# Create the target variable: Female management representation categories
+employer_management_stats <- employer_management_stats %>%
+  mutate(
+    female_mgmt_category = case_when(
+      total_managers == 0 ~ "No_Management_Data",
+      weighted_female_mgmt_proportion < 0.4 ~ "Low_Female_Representation",
+      weighted_female_mgmt_proportion >= 0.4 & weighted_female_mgmt_proportion <= 0.6 ~ "Balanced_Representation", 
+      weighted_female_mgmt_proportion > 0.6 ~ "High_Female_Representation",
+      TRUE ~ "Unknown"
+    )
+  )
+
+cat("Target variable distribution:\n")
+table(employer_management_stats$female_mgmt_category)
+```
+
+```{r advanced-feature-engineering}
+# Create additional features for the classification model
+
+# 1. Industry and size features
+industry_size_features <- combined_dataset %>%
+  select(employer_abn, employer_size, anzsic_division, anzsic_subdivision) %>%
+  mutate(
+    # Encode employer size as ordinal
+    size_numeric = case_when(
+      employer_size == "Small (100-199)" ~ 1,
+      employer_size == "Medium (200-999)" ~ 2,  
+      employer_size == "Large (1000+)" ~ 3,
+      TRUE ~ 0
+    ),
+    # Create industry groups
+    industry_group = case_when(
+      anzsic_division %in% c("Education and Training", "Health Care and Social Assistance") ~ "Education_Health",
+      anzsic_division %in% c("Public Administration and Safety", "Administrative and Support Services") ~ "Government_Admin",
+      anzsic_division %in% c("Financial and Insurance Services", "Professional, Scientific and Technical Services") ~ "Finance_Professional",
+      anzsic_division %in% c("Manufacturing", "Construction", "Mining") ~ "Industrial",
+      anzsic_division %in% c("Retail Trade", "Accommodation and Food Services", "Arts and Recreation Services") ~ "Service_Consumer",
+      TRUE ~ "Other"
+    )
+  )
+
+# 2. Workforce diversity features
+workforce_diversity_features <- workforce_composition %>%
+  group_by(employer_abn) %>%
+  summarise(
+    # Overall workforce gender balance
+    total_workforce = sum(n_employees, na.rm = TRUE),
+    female_workforce_prop = sum(n_employees[gender == "Female"], na.rm = TRUE) / 
+                           sum(n_employees, na.rm = TRUE),
+    male_workforce_prop = sum(n_employees[gender == "Male"], na.rm = TRUE) / 
+                         sum(n_employees, na.rm = TRUE),
+    
+    # Occupational diversity
+    unique_occupations = n_distinct(occupation, na.rm = TRUE),
+    occupation_diversity_index = 1 - sum((n_employees/sum(n_employees))^2, na.rm = TRUE),
+    
+    # Employment type diversity
+    full_time_prop = sum(n_employees[employment_type == "Full-time"], na.rm = TRUE) / 
+                    sum(n_employees, na.rm = TRUE),
+    part_time_prop = sum(n_employees[employment_type == "Part-time"], na.rm = TRUE) / 
+                    sum(n_employees, na.rm = TRUE),
+    
+    # Gender distribution across employment types
+    female_fulltime_prop = sum(n_employees[gender == "Female" & employment_type == "Full-time"], na.rm = TRUE) / 
+                          sum(n_employees[gender == "Female"], na.rm = TRUE),
+    female_parttime_prop = sum(n_employees[gender == "Female" & employment_type == "Part-time"], na.rm = TRUE) / 
+                          sum(n_employees[gender == "Female"], na.rm = TRUE),
+    
+    .groups = "drop"
+  ) %>%
+  mutate(
+    # Replace NaN and Inf with 0
+    across(everything(), ~ifelse(is.nan(.) | is.infinite(.), 0, .)),
+    
+    # Workforce size categories
+    workforce_size_category = case_when(
+      total_workforce < 200 ~ "Small_Workforce",
+      total_workforce >= 200 & total_workforce < 1000 ~ "Medium_Workforce",
+      total_workforce >= 1000 ~ "Large_Workforce",
+      TRUE ~ "Unknown_Size"
+    ),
+    
+    # Gender balance score (closer to 1 = more balanced)
+    workforce_gender_balance = 1 - abs(0.5 - female_workforce_prop) * 2
+  )
+
+# 3. Policy and initiative features from questionnaire data
+policy_features <- questionnaire_combined %>%
+  group_by(employer_abn, data_source, question_text) %>%
+  summarise(
+    response_value = first(response),
+    .groups = "drop"
+  ) %>%
+  # Focus on key gender equality indicators
+  filter(
+    str_detect(tolower(question_text), "gender|equality|diversity|flexible|parental|leadership|promotion|mentoring|target") |
+    str_detect(tolower(response), "yes|no|implemented|available")
+  ) %>%
+  group_by(employer_abn) %>%
+  summarise(
+    # Count of positive policy responses
+    total_policy_questions = n(),
+    positive_responses = sum(str_detect(tolower(response_value), "yes|implemented|available|established"), na.rm = TRUE),
+    policy_engagement_score = ifelse(total_policy_questions > 0, 
+                                   positive_responses / total_policy_questions, 0),
+    
+    # Specific policy areas
+    has_gender_targets = any(str_detect(tolower(question_text), "target") & 
+                           str_detect(tolower(response_value), "yes|implemented")),
+    has_flexible_work = any(str_detect(tolower(question_text), "flexible") & 
+                          str_detect(tolower(response_value), "yes|available")),
+    has_mentoring = any(str_detect(tolower(question_text), "mentor") & 
+                       str_detect(tolower(response_value), "yes|implemented")),
+    has_leadership_programs = any(str_detect(tolower(question_text), "leadership|development") & 
+                                str_detect(tolower(response_value), "yes|available")),
+    
+    .groups = "drop"
+  ) %>%
+  mutate(
+    # Convert logical to numeric
+    across(starts_with("has_"), ~as.numeric(.))
+  )
+
+# 4. Workforce movement features
+movement_features <- workforce_management %>%
+  group_by(employer_abn, movement_type, gender) %>%
+  summarise(movement_count = sum(n_employees, na.rm = TRUE), .groups = "drop") %>%
+  pivot_wider(names_from = c(movement_type, gender), 
+              values_from = movement_count, values_fill = 0,
+              names_sep = "_") %>%
+  mutate(
+    # Calculate promotion rates by gender
+    total_promotions = rowSums(select(., contains("Promotion")), na.rm = TRUE),
+    female_promotions = rowSums(select(., contains("Promotion_Female")), na.rm = TRUE),
+    male_promotions = rowSums(select(., contains("Promotion_Male")), na.rm = TRUE),
+    
+    female_promotion_ratio = ifelse(total_promotions > 0, 
+                                  female_promotions / total_promotions, 0),
+    
+    # Calculate turnover patterns
+    total_resignations = rowSums(select(., contains("Resignation")), na.rm = TRUE),
+    female_resignations = rowSums(select(., contains("Resignation_Female")), na.rm = TRUE),
+    
+    female_turnover_ratio = ifelse(total_resignations > 0,
+                                 female_resignations / total_resignations, 0)
+  ) %>%
+  select(employer_abn, total_promotions, female_promotion_ratio, 
+         total_resignations, female_turnover_ratio)
+
+cat("Feature engineering completed successfully!\n")
+```
+
+```{r create-final-modeling-dataset}
+# Combine all features into final modeling dataset
+modeling_dataset <- employer_management_stats %>%
+  left_join(industry_size_features, by = "employer_abn") %>%
+  left_join(workforce_diversity_features, by = "employer_abn") %>%
+  left_join(policy_features, by = "employer_abn") %>%
+  left_join(movement_features, by = "employer_abn") %>%
+  # Add original combined dataset features
+  left_join(combined_dataset %>% 
+           select(employer_abn, total_questionnaire_responses, 
+                  action_on_gender_responses, employee_support_responses,
+                  flexible_work_responses, harm_prevention_responses,
+                  workplace_overview_responses), 
+           by = "employer_abn") %>%
+  # Clean up missing values
+  mutate(
+    across(where(is.numeric), ~ifelse(is.na(.), 0, .)),
+    across(where(is.logical), ~ifelse(is.na(.), FALSE, .)),
+    industry_group = ifelse(is.na(industry_group), "Other", industry_group),
+    workforce_size_category = ifelse(is.na(workforce_size_category), "Unknown_Size", workforce_size_category)
+  ) %>%
+  # Remove companies with no management data for modeling
+  filter(female_mgmt_category != "No_Management_Data")
+
+# Create additional derived features
+modeling_dataset <- modeling_dataset %>%
+  mutate(
+    # Interaction features
+    size_industry_interaction = paste(workforce_size_category, industry_group, sep = "_"),
+    policy_size_interaction = policy_engagement_score * size_numeric,
+    diversity_balance_score = (workforce_gender_balance + mgmt_gender_balance_score) / 2,
+    
+    # Categorical versions of continuous variables for potential use
+    female_workforce_category = cut(female_workforce_prop, 
+                                  breaks = c(0, 0.3, 0.7, 1), 
+                                  labels = c("Low_Female", "Balanced", "High_Female"),
+                                  include.lowest = TRUE),
+    
+    policy_engagement_category = cut(policy_engagement_score,
+                                   breaks = c(0, 0.3, 0.7, 1),
+                                   labels = c("Low_Engagement", "Medium_Engagement", "High_Engagement"),
+                                   include.lowest = TRUE)
+  )
+
+# Display the final dataset structure
+cat("Final modeling dataset created!\n")
+cat("Dimensions:", dim(modeling_dataset), "\n")
+cat("Target variable distribution:\n")
+print(table(modeling_dataset$female_mgmt_category))
+
+cat("\nKey features summary:\n")
+feature_columns <- setdiff(names(modeling_dataset), 
+                          c("employer_abn", "female_mgmt_category"))
+cat("Total features available:", length(feature_columns), "\n")
+
+# Show feature importance preview
+numeric_features <- modeling_dataset %>% 
+  select(where(is.numeric)) %>%
+  select(-employer_abn) %>%
+  names()
+
+cat("Numeric features (", length(numeric_features), "):\n")
+print(numeric_features)
+
+categorical_features <- modeling_dataset %>%
+  select(where(function(x) is.character(x) | is.factor(x))) %>%
+  select(-employer_abn, -female_mgmt_category) %>%
+  names()
+
+cat("\nCategorical features (", length(categorical_features), "):\n") 
+print(categorical_features)
+```
+
+```{r save-modeling-dataset}
+# Save the modeling dataset
+write_csv(modeling_dataset, "wgea_modeling_dataset_2024.csv")
+
+# Create a feature description file
+feature_descriptions <- data.frame(
+  Feature_Name = names(modeling_dataset),
+  Feature_Type = sapply(modeling_dataset, function(x) class(x)[1]),
+  Description = c(
+    "Australian Business Number (identifier)",
+    "Number of male managers", 
+    "Number of female managers",
+    "Total number of managers",
+    "Average female proportion across management categories",
+    "Weighted female proportion in management (target calculation base)",
+    "Number of management categories",
+    "Management categories with at least one female",
+    "Management categories with female majority",
+    "Management gender balance score (0-1, 1 = perfectly balanced)",
+    "Target variable: Female management representation level",
+    "Employer size as numeric (1=Small, 2=Medium, 3=Large)",
+    "ANZSIC industry division",
+    "ANZSIC industry subdivision", 
+    "Grouped industry categories",
+    "Total workforce size",
+    "Proportion of female employees in workforce",
+    "Proportion of male employees in workforce",
+    "Number of unique occupations",
+    "Occupation diversity index",
+    "Proportion of full-time employees",
+    "Proportion of part-time employees", 
+    "Proportion of female employees who are full-time",
+    "Proportion of female employees who are part-time",
+    "Workforce size category",
+    "Overall workforce gender balance score",
+    "Total policy-related questionnaire responses",
+    "Number of positive policy responses",
+    "Policy engagement score (positive responses / total)",
+    "Has gender equality targets",
+    "Has flexible work arrangements",
+    "Has mentoring programs", 
+    "Has leadership development programs",
+    "Total promotions across all employees",
+    "Female proportion of promotions",
+    "Total resignations across all employees",
+    "Female proportion of resignations",
+    paste("Other features from combined dataset:", 
+          paste(setdiff(names(modeling_dataset), names(feature_descriptions)[1:37]), collapse = ", "))
+  )[1:length(names(modeling_dataset))]
+)
+
+write_csv(feature_descriptions, "feature_descriptions.csv")
+
+cat("Modeling dataset saved as 'wgea_modeling_dataset_2024.csv'\n")
+cat("Feature descriptions saved as 'feature_descriptions.csv'\n")
+cat("Ready for classification modeling!\n")
+```
+
+## Summary
+
+This analysis has successfully combined all WGEA datasets and engineered comprehensive features for predicting female management representation. The approach included:
+
+### Target Variable Creation:
+- **Low_Female_Representation**: < 40% female managers
+- **Balanced_Representation**: 40-60% female managers  
+- **High_Female_Representation**: > 60% female managers
+
+### Feature Categories Engineered:
+
+1. **Management Features**: Total managers, gender proportions, balance scores
+2. **Industry & Size Features**: Company size, industry groupings, size-industry interactions
+3. **Workforce Diversity Features**: Gender balance, occupational diversity, employment patterns
+4. **Policy & Initiative Features**: Gender equality policies, flexible work, mentoring programs
+5. **Workforce Movement Features**: Promotion patterns, turnover rates by gender
+6. **Engagement Features**: Questionnaire response patterns, policy engagement scores
+
+### Key Features for Classification:
+- `weighted_female_mgmt_proportion` (target calculation base)
+- `workforce_gender_balance` (overall gender balance)
+- `policy_engagement_score` (commitment to gender initiatives)
+- `industry_group` (industry context)
+- `size_numeric` (company size effect)
+- `female_promotion_ratio` (career advancement patterns)
+- Various interaction terms and derived features
+
+The final modeling dataset contains **comprehensive features** engineered specifically for predicting female management representation, ready for machine learning algorithms!
